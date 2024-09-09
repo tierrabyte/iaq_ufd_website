@@ -6,6 +6,7 @@ from dash.dependencies import Input, Output
 import plotly.express as px
 import plotly.graph_objects as go
 
+
 # Define the directory for processed data files
 data_dir = os.getenv('DATA_DIR', 'data_processed')
 
