@@ -7,6 +7,9 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 
+
+
+
 # Define the directory for processed data files
 data_dir = os.getenv('DATA_DIR', 'data_processed')
 
@@ -14,20 +17,21 @@ if not os.path.exists(data_dir):
     print(f"Data directory does not exist: {data_dir}")
     data_dir = None
 
-# Initialize the Dash app with callback exceptions suppressed
+# Initialize the Dash app 
 app = dash.Dash(__name__, suppress_callback_exceptions=True)
 app.title = "Environmental Data Dashboard"
-server = app.server  # Expose the server variable for deployments
+server = app.server  
 
-# Load data from CSV files
 def load_data(directory, device=None):
     if directory is None:
         return pd.DataFrame()
+    
     if device:
         file_path = os.path.join(directory, f'{device}.csv')
         if os.path.exists(file_path):
             df = pd.read_csv(file_path)
-            df['time'] = pd.to_datetime(df['time'], errors='coerce')
+            # Parse datetime assuming it's already in 'America/New_York'
+            df['time'] = pd.to_datetime(df['time'], errors='coerce').dt.tz_localize('America/New_York', ambiguous='NaT', nonexistent='shift_forward')
             df['device'] = device  # Add a column for the device name
             return df
     else:
@@ -41,8 +45,9 @@ def load_data(directory, device=None):
             return pd.concat(all_data, ignore_index=True)
     return pd.DataFrame()
 
-# Heat index calculation function
+
 def calculate_heat_index(temp_f, rh):
+    # Constants for the heat index formula
     c1 = -42.379
     c2 = 2.04901523
     c3 = 10.14333127
@@ -52,13 +57,29 @@ def calculate_heat_index(temp_f, rh):
     c7 = 1.22874e-3
     c8 = 8.5282e-4
     c9 = -1.99e-6
-    
+
+    # Check if heat index calculation is necessary
+    if temp_f < 80 or rh < 40:
+        return temp_f  # Return temperature as the heat index for low values
+
+    # Calculate the heat index using the full equation
     heat_index = (c1 + (c2 * temp_f) + (c3 * rh) + (c4 * temp_f * rh) +
                   (c5 * temp_f ** 2) + (c6 * rh ** 2) +
                   (c7 * temp_f ** 2 * rh) + (c8 * temp_f * rh ** 2) +
                   (c9 * temp_f ** 2 * rh ** 2))
     
+    # Adjustment for low humidity
+    if rh < 13 and (80 <= temp_f <= 112):
+        adjustment = ((13 - rh) / 4) * ((17 - abs(temp_f - 95)) / 17)
+        heat_index -= adjustment
+    
+    # Adjustment for high humidity
+    if rh > 85 and (80 <= temp_f <= 87):
+        adjustment = ((rh - 85) / 10) * ((87 - temp_f) / 5)
+        heat_index += adjustment
+
     return heat_index
+
 
 # Function to format device names
 def format_device_name(device_name):
