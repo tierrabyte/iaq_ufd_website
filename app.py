@@ -106,8 +106,7 @@ home_layout = html.Div([
         id='device-dropdown',
         options=[
         {'label': f'Device {device}', 'value': device}
-        for device in os.listdir(data_dir) if device.endswith('.csv') and device != '88439.csv'
-        ],
+        for device in os.listdir(data_dir) if device.endswith('.csv')],
     placeholder="Select a device"
     ),
     dcc.DatePickerRange(
