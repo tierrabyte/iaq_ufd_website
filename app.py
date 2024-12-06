@@ -172,8 +172,8 @@ def update_graphs(selected_device, start_date, end_date):
         return {}, {}, {}, {}, ""
 
     # Convert start_date and end_date to datetime
-    start_date = pd.to_datetime(start_date)
-    end_date = pd.to_datetime(end_date)
+    start_date = pd.to_datetime(start_date).tz_localize('UTC')
+    end_date = pd.to_datetime(end_date).tz_localize('UTC')
 
     data = load_data(data_dir, selected_device)
 
