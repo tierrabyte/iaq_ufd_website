@@ -190,15 +190,13 @@ def update_graphs(selected_device, start_date, end_date):
     outdoor_data = outdoor_data[(outdoor_data['time'] >= start_date) & (outdoor_data['time'] <= end_date)]
 
     # Calculate averages and create graphs as before
-    avg_pm10 = data['pm.10'].mean()
     avg_pm25 = data['pm.2.5'].mean()
     avg_tempF = data['tempF'].mean()
     avg_humid = data['rh'].mean()
     avg_aqi = data['aqi'].mean()
     avg_heat_index = data.apply(lambda row: calculate_heat_index(row['tempF'], row['rh']), axis=1).mean()
 
-    average_output = (f"Average PM10: {avg_pm10:.2f} µg/m³, "
-                      f"Average PM2.5: {avg_pm25:.2f} µg/m³, "
+    average_output = (f"Average PM2.5: {avg_pm25:.2f} µg/m³, "
                       f"Average Temperature: {avg_tempF:.2f} °F, "
                       f"Average Humidity: {avg_humid:.2f} %, "
                       f"Average AQI: {avg_aqi:.2f}, "
@@ -207,7 +205,6 @@ def update_graphs(selected_device, start_date, end_date):
     # Graph generation (unchanged)
     pm_fig = go.Figure()
     pm_fig.add_trace(go.Scatter(x=data['time'], y=data['pm.2.5'], mode='lines', name='PM 2.5 (µg/m³)', connectgaps=True, line=dict(color='blue')))
-    pm_fig.add_trace(go.Scatter(x=data['time'], y=data['pm.10'], mode='lines', name='PM 10.0 (µg/m³)', connectgaps=True, line=dict(color='red')))
     pm_fig.add_trace(go.Scatter(x=outdoor_data['time'], y=outdoor_data['pm.2.5'], mode='lines', name='Outdoor PM 2.5 (µg/m³)', connectgaps=True, line=dict(color='green')))
     pm_fig.update_layout(xaxis_title='Time', yaxis_title='Particulate Matter (µg/m³)')
 
