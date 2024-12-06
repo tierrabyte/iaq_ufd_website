@@ -104,9 +104,11 @@ home_layout = html.Div([
     ''', className='text-center'),
     dcc.Dropdown(
         id='device-dropdown',
-        options=[{'label': format_device_name(device.replace('.csv', '')), 'value': device.replace('.csv', '')} for device in os.listdir(data_dir) if data_dir and device.endswith('.csv')],
-        value=None,
-        placeholder="Select a device"
+        options=[
+        {'label': f'Device {device}', 'value': device}
+        for device in os.listdir(data_dir) if device.endswith('.csv') and device != '88439.csv'
+        ],
+    placeholder="Select a device"
     ),
     dcc.DatePickerRange(
         id='date-picker-range',
@@ -206,7 +208,11 @@ def update_graphs(selected_device, start_date, end_date):
     pm_fig = go.Figure()
     pm_fig.add_trace(go.Scatter(x=data['time'], y=data['pm.2.5'], mode='lines', name='PM 2.5 (µg/m³)', connectgaps=True, line=dict(color='blue')))
     pm_fig.add_trace(go.Scatter(x=outdoor_data['time'], y=outdoor_data['pm.2.5'], mode='lines', name='Outdoor PM 2.5 (µg/m³)', connectgaps=True, line=dict(color='green')))
-    pm_fig.update_layout(xaxis_title='Time', yaxis_title='Particulate Matter (µg/m³)')
+    pm_fig.update_layout(
+        title='Particulate Matter Over Time',
+        xaxis_title='Time', 
+        yaxis_title='Particulate Matter (µg/m³)'
+    )
 
     temp_humidity_fig = go.Figure()
     temp_humidity_fig.add_trace(go.Scatter(x=data['time'], y=data['tempF'], mode='lines', name='Temperature (°F)', yaxis='y1', connectgaps=True, line=dict(color='blue')))
@@ -222,14 +228,22 @@ def update_graphs(selected_device, start_date, end_date):
 
     aqi_fig = go.Figure()
     aqi_fig.add_trace(go.Scatter(x=data['time'], y=data['aqi'], mode='lines', name='AQI'))
-    aqi_fig.update_layout(xaxis_title='Time', yaxis_title='AQI')
+    aqi_fig.update_layout(
+        title = 'Indoor Air Quality Index over Time',
+        xaxis_title='Time', 
+        yaxis_title='AQI'
+    )
 
     data['heat_index'] = data.apply(lambda row: calculate_heat_index(row['tempF'], row['rh']), axis=1)
     outdoor_data['heat_index'] = outdoor_data.apply(lambda row: calculate_heat_index(row['tempF'], row['rh']), axis=1)
     heat_index_fig = go.Figure()
     heat_index_fig.add_trace(go.Scatter(x=data['time'], y=data['heat_index'], mode='lines', name='Heat Index (°F)', connectgaps=True, line=dict(color='red')))
     heat_index_fig.add_trace(go.Scatter(x=outdoor_data['time'], y=outdoor_data['heat_index'], mode='lines', name='Outdoor Heat Index (°F)', connectgaps=True, line=dict(color='blue')))
-    heat_index_fig.update_layout(xaxis_title='Time', yaxis_title='Heat Index (°F)')
+    heat_index_fig.update_layout(
+        title='Heat Index Over Time',
+        xaxis_title='Time', 
+        yaxis_title='Heat Index (°F)'
+    )
 
     return pm_fig, temp_humidity_fig, aqi_fig, heat_index_fig, average_output
 
