@@ -25,7 +25,8 @@ def load_data(directory, device=None):
         file_path = os.path.join(directory, f'{device}.csv')
         if os.path.exists(file_path):
             df = pd.read_csv(file_path)
-            df['time'] = pd.to_datetime(df['time'], errors='coerce')  # Assuming time is already in EST
+            df['time'] = pd.to_datetime(df['time'], errors='coerce')  # Parse time column
+            df = df[df['time'].notna()]  # Remove invalid timestamps
             return df
     else:
         # Load all device data
@@ -35,7 +36,9 @@ def load_data(directory, device=None):
                 device_df = load_data(directory, file.replace('.csv', ''))
                 all_data.append(device_df)
         if all_data:
-            return pd.concat(all_data, ignore_index=True)
+            combined_data = pd.concat(all_data, ignore_index=True)
+            combined_data = combined_data[combined_data['time'].notna()]  # Remove invalid timestamps
+            return combined_data
     return pd.DataFrame()
 
 # Heat index calculation function (no changes needed)
@@ -64,9 +67,11 @@ def format_device_name(device_name):
 # Load initial data to set default date range
 initial_data = load_data(data_dir)
 
-if not initial_data.empty:
-    default_start_date = initial_data['time'].min().date()
-    default_end_date = initial_data['time'].max().date()
+initial_data = load_data(data_dir)
+
+if not initial_data.empty and 'time' in initial_data.columns:
+    default_start_date = initial_data['time'].min().date() if not initial_data['time'].isna().all() else None
+    default_end_date = initial_data['time'].max().date() if not initial_data['time'].isna().all() else None
 else:
     default_start_date = None
     default_end_date = None
