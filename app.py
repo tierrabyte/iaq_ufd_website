@@ -171,20 +171,25 @@ def update_graphs(selected_device, start_date, end_date):
     if selected_device is None or start_date is None or end_date is None:
         return {}, {}, {}, {}, ""
 
+    # Convert start_date and end_date to datetime
+    start_date = pd.to_datetime(start_date)
+    end_date = pd.to_datetime(end_date)
+
     data = load_data(data_dir, selected_device)
 
     if 'time' not in data.columns:
         return {}, {}, {}, {}, "No data available for the selected range."
 
+    # Filter data using datetime comparisons
     data = data[(data['time'] >= start_date) & (data['time'] <= end_date)]
 
     if data.empty:
         return {}, {}, {}, {}, "No data available for the selected range."
-    
-    outdoor_data = load_data(data_dir,'88439')
+
+    outdoor_data = load_data(data_dir, '88439')
     outdoor_data = outdoor_data[(outdoor_data['time'] >= start_date) & (outdoor_data['time'] <= end_date)]
 
-    # Calculate averages
+    # Calculate averages and create graphs as before
     avg_pm10 = data['pm.10'].mean()
     avg_pm25 = data['pm.2.5'].mean()
     avg_tempF = data['tempF'].mean()
@@ -199,14 +204,13 @@ def update_graphs(selected_device, start_date, end_date):
                       f"Average AQI: {avg_aqi:.2f}, "
                       f"Average Heat Index: {avg_heat_index:.2f} °F")
 
-    # Particulate Matter Graph
+    # Graph generation (unchanged)
     pm_fig = go.Figure()
     pm_fig.add_trace(go.Scatter(x=data['time'], y=data['pm.2.5'], mode='lines', name='PM 2.5 (µg/m³)', connectgaps=True, line=dict(color='blue')))
     pm_fig.add_trace(go.Scatter(x=data['time'], y=data['pm.10'], mode='lines', name='PM 10.0 (µg/m³)', connectgaps=True, line=dict(color='red')))
     pm_fig.add_trace(go.Scatter(x=outdoor_data['time'], y=outdoor_data['pm.2.5'], mode='lines', name='Outdoor PM 2.5 (µg/m³)', connectgaps=True, line=dict(color='green')))
     pm_fig.update_layout(xaxis_title='Time', yaxis_title='Particulate Matter (µg/m³)')
-    
-    # Temperature and Humidity Graph with separate y-axes
+
     temp_humidity_fig = go.Figure()
     temp_humidity_fig.add_trace(go.Scatter(x=data['time'], y=data['tempF'], mode='lines', name='Temperature (°F)', yaxis='y1', connectgaps=True, line=dict(color='blue')))
     temp_humidity_fig.add_trace(go.Scatter(x=data['time'], y=data['rh'], mode='lines', name='Humidity (%)', yaxis='y2', connectgaps=True, line=dict(color='red')))
@@ -219,20 +223,19 @@ def update_graphs(selected_device, start_date, end_date):
         yaxis2=dict(title='Humidity (%)', side='right', overlaying='y', showgrid=False)
     )
 
-    # AQI Graph
     aqi_fig = go.Figure()
     aqi_fig.add_trace(go.Scatter(x=data['time'], y=data['aqi'], mode='lines', name='AQI'))
     aqi_fig.update_layout(xaxis_title='Time', yaxis_title='AQI')
 
-    # Heat Index Graph
     data['heat_index'] = data.apply(lambda row: calculate_heat_index(row['tempF'], row['rh']), axis=1)
     outdoor_data['heat_index'] = outdoor_data.apply(lambda row: calculate_heat_index(row['tempF'], row['rh']), axis=1)
     heat_index_fig = go.Figure()
     heat_index_fig.add_trace(go.Scatter(x=data['time'], y=data['heat_index'], mode='lines', name='Heat Index (°F)', connectgaps=True, line=dict(color='red')))
     heat_index_fig.add_trace(go.Scatter(x=outdoor_data['time'], y=outdoor_data['heat_index'], mode='lines', name='Outdoor Heat Index (°F)', connectgaps=True, line=dict(color='blue')))
     heat_index_fig.update_layout(xaxis_title='Time', yaxis_title='Heat Index (°F)')
-    
+
     return pm_fig, temp_humidity_fig, aqi_fig, heat_index_fig, average_output
+
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
