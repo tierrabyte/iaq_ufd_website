@@ -105,7 +105,7 @@ for device, data_list in device_data.items():
     output_file = os.path.join(output_dir, f'{device}.csv')
     if os.path.exists(output_file):
         existing_data = pd.read_csv(output_file)
-        existing_data['time'] = pd.to_datetime(existing_data['time'], errors='coerce')
+        existing_data['time'] = pd.to_datetime(existing_data['time'], errors='coerce',utc=True)
         combined_data = pd.concat([existing_data, combined_data]).drop_duplicates(subset=['time']).sort_values(by='time')
     
     # Save the combined data to the file
