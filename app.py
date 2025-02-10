@@ -9,6 +9,8 @@ import plotly.graph_objects as go
 # Define the directory for processed data files
 data_dir = os.getenv('DATA_DIR', 'data_processed')
 
+print(data_dir)
+
 if not os.path.exists(data_dir):
     print(f"Data directory does not exist: {data_dir}")
     data_dir = None
