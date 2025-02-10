@@ -138,9 +138,6 @@ home_layout = html.Div([
         dcc.Graph(id='pm-graph')
     ]),
     html.Div(className='graph-container', children=[
-        dcc.Graph(id='pm-avg-graph')
-    ]),
-    html.Div(className='graph-container', children=[
         dcc.Graph(id='temp-humidity-graph')
     ]),
     html.Div(className='graph-container', children=[
@@ -180,7 +177,6 @@ def display_page(value):
 # Update graphs and averages based on the selected device and date range
 @app.callback(
     [Output('pm-graph', 'figure'),
-     Output('pm-avg-graph', 'figure'),
      Output('temp-humidity-graph', 'figure'),
      Output('aqi-graph', 'figure'),
      Output('heat-index-graph', 'figure'),
@@ -191,7 +187,7 @@ def display_page(value):
 )
 def update_graphs(selected_device, start_date, end_date):
     if selected_device is None or start_date is None or end_date is None:
-        return {}, {}, {}, {}, {}, ""
+        return {}, {}, {}, {}, ""
 
     # Convert start_date and end_date to datetime
     start_date = pd.to_datetime(start_date).tz_localize('UTC')
@@ -200,13 +196,13 @@ def update_graphs(selected_device, start_date, end_date):
     data = load_data(data_dir, selected_device)
 
     if 'time' not in data.columns:
-        return {}, {}, {}, {}, {}, "No data available for the selected range."
+        return {}, {}, {}, {}, "No data available for the selected range."
 
     # Filter data using datetime comparisons
     data = data[(data['time'] >= start_date) & (data['time'] <= end_date)]
 
     if data.empty:
-        return {}, {}, {}, {}, {}, "No data available for the selected range."
+        return {}, {}, {}, {}, "No data available for the selected range."
 
     outdoor_data = load_data(data_dir, '88439')
     outdoor_data = outdoor_data[(outdoor_data['time'] >= start_date) & (outdoor_data['time'] <= end_date)]
@@ -223,28 +219,6 @@ def update_graphs(selected_device, start_date, end_date):
                       f"Average Humidity: {avg_humid:.2f} %, "
                       f"Average AQI: {avg_aqi:.2f}, "
                       f"Average Heat Index: {avg_heat_index:.2f} °F")
-    
-    # Graph monthly averages
-    monthly_avg = data.groupby('year_month').agg({
-        'pm.2.5': 'mean',
-        'tempF': 'mean',
-        'rh': 'mean',
-        'aqi': 'mean'
-    }).reset_index()
-
-    # Convert 'year_month' to a proper datetime format for plotting
-    monthly_avg['year_month'] = monthly_avg['year_month'].astype(str)
-    monthly_avg['year_month'] = pd.to_datetime(monthly_avg['year_month'])
-
-    pm_monthly_avg_fig = go.Figure()
-
-    pm_monthly_avg_fig.add_trace(go.Bar(x=monthly_avg['year_month'], y=monthly_avg['pm.2.5'], name='PM 2.5 (µg/m³)'))
-    pm_monthly_avg_fig.update_layout(
-        title='Monthly Average Particulate Matter',
-        xaxis=dict(title='Time'),
-        yaxis_title='Particulate Matter (µg/m³)'
-    )
-
     
 
     # Graph generation (unchanged)
@@ -288,7 +262,7 @@ def update_graphs(selected_device, start_date, end_date):
         yaxis_title='Heat Index (°F) '
     )
 
-    return pm_fig, pm_monthly_avg_fig, temp_humidity_fig, aqi_fig, heat_index_fig, average_output
+    return pm_fig, temp_humidity_fig, aqi_fig, heat_index_fig, average_output
 
 
 if __name__ == '__main__':
