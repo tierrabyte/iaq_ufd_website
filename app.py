@@ -58,8 +58,23 @@ def calculate_heat_index(temp_f, rh):
                   (c7 * temp_f ** 2 * rh) + (c8 * temp_f * rh ** 2) +
                   (c9 * temp_f ** 2 * rh ** 2))
     
-    return heat_index
+     # Adjustment conditions
+    if temp_f < 80 or rh < 40:
+        # If the temperature is below 80°F or humidity below 40%, use a simpler equation
+        heat_index = 0.5 * (temp_f + 61.0 + ((temp_f - 68.0) * 1.2) + (rh * 0.094))
 
+    elif rh < 13 and 80 <= temp_f <= 112:
+        # Adjustment for low humidity
+        adjustment = ((13 - rh) / 4) * ((17 - abs(temp_f - 95)) / 17) ** 0.5
+        heat_index -= adjustment
+
+    elif rh > 85 and 80 <= temp_f <= 87:
+        # Adjustment for high humidity
+        adjustment = ((rh - 85) / 10) * ((87 - temp_f) / 5)
+        heat_index += adjustment
+
+    return heat_index  
+    
 # Function to format device names
 def format_device_name(device_name):
     return device_name[-5:]
