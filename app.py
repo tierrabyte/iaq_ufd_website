@@ -5,6 +5,7 @@ from dash import dcc, html
 from dash.dependencies import Input, Output
 import plotly.graph_objects as go
 
+
 # Define the directory for processed data files
 data_dir = os.getenv('DATA_DIR', 'data_processed')
 
@@ -74,7 +75,7 @@ def calculate_heat_index(temp_f, rh):
         heat_index += adjustment
 
     return heat_index  
-    
+
 # Function to format device names
 def format_device_name(device_name):
     return device_name[-5:]
@@ -257,7 +258,7 @@ def update_graphs(selected_device, start_date, end_date):
     heat_index_fig.update_layout(
         title='Heat Index Over Time',
         xaxis_title='Time', 
-        yaxis_title='Heat Index (°F)'
+        yaxis_title='Heat Index (°F) '
     )
 
     return pm_fig, temp_humidity_fig, aqi_fig, heat_index_fig, average_output
