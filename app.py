@@ -19,29 +19,17 @@ if not os.path.exists(data_dir):
 app = dash.Dash(__name__, suppress_callback_exceptions=True)
 app.title = "Environmental Data Dashboard"
 server = app.server  # Expose the server variable for deployments
-
-# Load data from CSV files
-def load_data(directory, device=None):
-    if directory is None:
+def load_data(directory, device):
+    if directory is None or device is None:
         return pd.DataFrame()
-    if device:
-        file_path = os.path.join(directory, f'{device}.csv')
-        if os.path.exists(file_path):
-            df = pd.read_csv(file_path)
-            df['time'] = pd.to_datetime(df['time'], errors='coerce')  # Parse time column
-            df = df[df['time'].notna()]  # Remove invalid timestamps
-            return df
-    else:
-        # Load all device data
-        all_data = []
-        for file in os.listdir(directory):
-            if file.endswith('.csv'):
-                device_df = load_data(directory, file.replace('.csv', ''))
-                all_data.append(device_df)
-        if all_data:
-            combined_data = pd.concat(all_data, ignore_index=True)
-            combined_data = combined_data[combined_data['time'].notna()]  # Remove invalid timestamps
-            return combined_data
+
+    file_path = os.path.join(directory, f'{device}.csv')
+    if os.path.exists(file_path):
+        df = pd.read_csv(file_path)
+        df['time'] = pd.to_datetime(df['time'], errors='coerce')
+        df = df[df['time'].notna()]
+        return df
+
     return pd.DataFrame()
 
 # Heat index calculation function (no changes needed)
@@ -83,9 +71,10 @@ def format_device_name(device_name):
     return device_name[-5:]
 
 # Load initial data to set default date range
-initial_data = load_data(data_dir)
+device_files = [f for f in os.listdir(data_dir) if f.endswith('.csv')]
+first_device = device_files[0][:-4] if device_files else None
+initial_data = load_data(data_dir, first_device)
 
-initial_data = load_data(data_dir)
 
 if not initial_data.empty and 'time' in initial_data.columns:
     default_start_date = initial_data['time'].min().date() if not initial_data['time'].isna().all() else None
