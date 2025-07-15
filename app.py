@@ -90,10 +90,22 @@ home_layout = html.Div([
         end_date_placeholder_text="End Date"
     ),
     html.Div(id='average-output'),
-    dcc.Graph(id='pm-graph'),
-    dcc.Graph(id='temp-humidity-graph'),
-    dcc.Graph(id='aqi-graph'),
-    dcc.Graph(id='heat-index-graph')
+    html.Div([
+        html.H3("Particulate Matter Over Time"),
+        dcc.Graph(id='pm-graph')
+    ]),
+    html.Div([
+        html.H3("Temperature and Humidity Over Time"),
+        dcc.Graph(id='temp-humidity-graph')
+    ]),
+    html.Div([
+        html.H3("Air Quality Index Over Time"),
+        dcc.Graph(id='aqi-graph')
+    ]),
+    html.Div([
+        html.H3("Heat Index Over Time"),
+        dcc.Graph(id='heat-index-graph')
+    ])
 ])
 
 about_layout = html.Div([
@@ -159,6 +171,7 @@ def update_graphs(selected_device, start_date, end_date):
     pm_fig = go.Figure()
     pm_fig.add_trace(go.Scatter(x=data['time'], y=data['pm.2.5'], mode='lines', name='Indoor PM2.5'))
     pm_fig.add_trace(go.Scatter(x=outdoor_data['time'], y=outdoor_data['pm.2.5'], mode='lines', name='Outdoor PM2.5'))
+    pm_fig.update_layout(title='Particulate Matter Over Time')
 
     temp_humidity_fig = go.Figure()
     temp_humidity_fig.add_trace(go.Scatter(x=data['time'], y=data['tempF'], mode='lines', name='Indoor Temp'))
@@ -166,18 +179,32 @@ def update_graphs(selected_device, start_date, end_date):
     temp_humidity_fig.add_trace(go.Scatter(x=outdoor_data['time'], y=outdoor_data['tempF'], mode='lines', name='Outdoor Temp'))
     temp_humidity_fig.add_trace(go.Scatter(x=outdoor_data['time'], y=outdoor_data['rh'], mode='lines', name='Outdoor RH', yaxis='y2'))
     temp_humidity_fig.update_layout(
+        title='Temperature and Humidity Over Time',
         yaxis=dict(title='Temperature (°F)'),
         yaxis2=dict(title='Humidity (%)', overlaying='y', side='right')
     )
 
     aqi_fig = go.Figure()
-    aqi_fig.add_trace(go.Scatter(x=data['time'], y=data['aqi'], mode='lines', name='AQI'))
+    aqi_fig.add_trace(go.Scatter(x=data['time'], y=data['aqi'], mode='lines', name='Indoor AQI'))
+    aqi_fig.add_trace(go.Scatter(x=outdoor_data['time'], y=outdoor_data['aqi'], mode='lines', name='Outdoor AQI'))
+    aqi_fig.update_layout(
+        title='Air Quality Index Over Time',
+        xaxis_title='Time',
+        yaxis_title='AQI',
+        showlegend=True
+    )
 
     data['heat_index'] = data.apply(lambda row: calculate_heat_index(row['tempF'], row['rh']), axis=1)
     outdoor_data['heat_index'] = outdoor_data.apply(lambda row: calculate_heat_index(row['tempF'], row['rh']), axis=1)
     heat_fig = go.Figure()
     heat_fig.add_trace(go.Scatter(x=data['time'], y=data['heat_index'], mode='lines', name='Indoor Heat Index'))
     heat_fig.add_trace(go.Scatter(x=outdoor_data['time'], y=outdoor_data['heat_index'], mode='lines', name='Outdoor Heat Index'))
+    heat_fig.update_layout(
+        title='Heat Index Over Time',
+        xaxis_title='Time',
+        yaxis_title='Heat Index (°F)',
+        showlegend=True
+    )
 
     return pm_fig, temp_humidity_fig, aqi_fig, heat_fig, avg_output
 
