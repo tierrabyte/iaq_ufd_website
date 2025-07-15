@@ -75,6 +75,10 @@ device_files = [f for f in os.listdir(data_dir) if f.endswith('.csv')]
 first_device = device_files[0][:-4] if device_files else None
 initial_data = load_data(data_dir, first_device)
 
+print("[DEBUG] Data dir:", data_dir)
+print("[DEBUG] Device files found:", device_files)
+print("[DEBUG] First device:", first_device)
+
 
 if not initial_data.empty and 'time' in initial_data.columns:
     default_start_date = initial_data['time'].min().date() if not initial_data['time'].isna().all() else None
