@@ -5,31 +5,31 @@ from dash import dcc, html
 from dash.dependencies import Input, Output
 import plotly.graph_objects as go
 
+# Resolve absolute path to this file's directory
+base_dir = os.path.dirname(os.path.abspath(__file__))
 
-# Define the directory for processed data files
-data_dir = os.getenv('DATA_DIR', 'data_processed')
+# Use environment variable or default to 'data_processed' inside the app dir
+data_subdir = os.getenv('DATA_DIR', 'data_processed')
+data_dir = os.path.join(base_dir, data_subdir)
 
-print(data_dir)
-
-if not os.path.exists(data_dir):
-    print(f"Data directory does not exist: {data_dir}")
-    data_dir = None
-
-# Initialize the Dash app with callback exceptions suppressed
+# Initialize the Dash app
 app = dash.Dash(__name__, suppress_callback_exceptions=True)
 app.title = "Environmental Data Dashboard"
 server = app.server  # Expose the server variable for deployments
+
 def load_data(directory, device):
     if directory is None or device is None:
         return pd.DataFrame()
 
     file_path = os.path.join(directory, f'{device}.csv')
+
     if os.path.exists(file_path):
         df = pd.read_csv(file_path)
         df['time'] = pd.to_datetime(df['time'], errors='coerce')
         df = df[df['time'].notna()]
         return df
 
+    print(f"[WARN] File not found: {file_path}")
     return pd.DataFrame()
 
 # Heat index calculation function (no changes needed)
@@ -259,4 +259,3 @@ def update_graphs(selected_device, start_date, end_date):
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run_server(debug=False, host='0.0.0.0', port=port)
-    
