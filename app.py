@@ -18,7 +18,7 @@ server = app.server
 # Load data safely without timezone conversion (already handled externally)
 def get_device_files():
     try:
-        return sorted([f for f in os.listdir(data_dir) if f.endswith('.csv')])
+        return sorted([f for f in os.listdir(data_dir) if f.endswith('.csv') and not f.startswith('88439')])
     except Exception as e:
         print(f"[ERROR] Cannot list data directory: {e}")
         return []
@@ -109,18 +109,20 @@ def render_dynamic_content(device, start_date, end_date, metric):
         return html.Div("Please select a device and date range.")
 
     df = load_data(data_dir, device)
+    outdoor_df = load_data(data_dir, '88439')
 
-    # Localize the start and end to the same timezone as the data
     eastern = pytz.timezone("America/New_York")
     start_date = eastern.localize(pd.to_datetime(start_date).to_pydatetime())
     end_date = eastern.localize(pd.to_datetime(end_date).to_pydatetime())
 
     df = df[(df['time'] >= start_date) & (df['time'] <= end_date)]
+    outdoor_df = outdoor_df[(outdoor_df['time'] >= start_date) & (outdoor_df['time'] <= end_date)]
 
     if df.empty:
         return html.Div("No data available for the selected range.")
 
     df['heat_index'] = df.apply(lambda row: calculate_heat_index(row['tempF'], row['rh']), axis=1)
+    outdoor_df['heat_index'] = outdoor_df.apply(lambda row: calculate_heat_index(row['tempF'], row['rh']), axis=1)
 
     if metric == 'summary':
         avg_pm = df['pm.2.5'].mean()
@@ -160,19 +162,23 @@ def render_dynamic_content(device, start_date, end_date, metric):
 
     elif metric in df.columns:
         df['hour'] = df['time'].dt.hour
+        outdoor_df['hour'] = outdoor_df['time'].dt.hour
         hourly_avg = df.groupby('hour')[metric].mean().reset_index()
+        outdoor_hourly = outdoor_df.groupby('hour')[metric].mean().reset_index()
 
         fig = go.Figure()
-        fig.add_trace(go.Scatter(x=df['time'], y=df[metric], mode='lines', name=metric))
+        fig.add_trace(go.Scatter(x=df['time'], y=df[metric], mode='lines', name=f"{device} {metric}"))
+        fig.add_trace(go.Scatter(x=outdoor_df['time'], y=outdoor_df[metric], mode='lines', name="Outdoor 88439"))
         fig.update_layout(title=f"{metric} Over Time", xaxis_title="Time", yaxis_title=metric, template='plotly_white')
 
-        bar_fig = go.Figure()
-        bar_fig.add_trace(go.Bar(x=hourly_avg['hour'], y=hourly_avg[metric], name=f'Avg {metric}'))
-        bar_fig.update_layout(title=f"Hourly Average {metric}", xaxis_title="Hour of Day", yaxis_title=f"Average {metric}", template='plotly_white')
+        trace_fig = go.Figure()
+        trace_fig.add_trace(go.Scatter(x=hourly_avg['hour'], y=hourly_avg[metric], mode='lines+markers', name=f'{device} Avg {metric}'))
+        trace_fig.add_trace(go.Scatter(x=outdoor_hourly['hour'], y=outdoor_hourly[metric], mode='lines+markers', name='Outdoor Avg'))
+        trace_fig.update_layout(title=f"Hourly Average {metric}", xaxis_title="Hour of Day", yaxis_title=f"Average {metric}", template='plotly_white')
 
         return html.Div([
             dcc.Graph(figure=fig),
-            dcc.Graph(figure=bar_fig)
+            dcc.Graph(figure=trace_fig)
         ])
 
     return html.Div("Invalid metric selected.")
