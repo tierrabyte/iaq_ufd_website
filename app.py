@@ -64,17 +64,17 @@ def get_device_options():
 
 def get_pm25_aqi_category(avg_pm):
     if avg_pm <= 12.0:
-        return "🟢 Good (0–12 µg/m³)"
+        return "🟢 Good (0–12 µg/m³)", "green"
     elif avg_pm <= 35.4:
-        return "🟡 Moderate (12.1–35.4 µg/m³)"
+        return "🟡 Moderate (12.1–35.4 µg/m³)", "yellow"
     elif avg_pm <= 55.4:
-        return "🟠 Unhealthy for Sensitive Groups (35.5–55.4 µg/m³)"
+        return "🟠 Unhealthy for Sensitive Groups (35.5–55.4 µg/m³)", "orange"
     elif avg_pm <= 150.4:
-        return "🔴 Unhealthy (55.5–150.4 µg/m³)"
+        return "🔴 Unhealthy (55.5–150.4 µg/m³)", "red"
     elif avg_pm <= 250.4:
-        return "🔷 Very Unhealthy (150.5–250.4 µg/m³)"
+        return "🔷 Very Unhealthy (150.5–250.4 µg/m³)", "purple"
     else:
-        return "🔵 Hazardous (250.5+ µg/m³)"
+        return "🔵 Hazardous (250.5+ µg/m³)", "maroon"
 
 # Layout
 app.layout = html.Div([
@@ -125,47 +125,38 @@ def render_dynamic_content(device, start_date, end_date, metric):
 
     if metric == 'summary':
         avg_pm = df['pm.2.5'].mean()
-        category_label = get_pm25_aqi_category(avg_pm)
+        category_label, color = get_pm25_aqi_category(avg_pm)
 
         df['date'] = df['time'].dt.date
-        daily_avg_cols = ['pm.2.5', 'tempF', 'rh', 'heat_index']
-        if 'aqi' in df.columns:
-            daily_avg_cols.append('aqi')
-
-        daily_avg = df.groupby('date')[daily_avg_cols].mean().reset_index()
+        daily_avg = df.groupby('date')[['pm.2.5', 'tempF', 'rh', 'aqi', 'heat_index']].mean().reset_index()
 
         peak_hour = df.groupby(df['time'].dt.hour)['pm.2.5'].mean().idxmax()
 
         summary_text = [
             html.H3("Summary Report"),
-            html.Div(f"Air Quality Status: {category_label}", style={'fontWeight': 'bold'}),
+            html.Div(f"Air Quality Status: {category_label}", style={'color': color, 'fontWeight': 'bold'}),
             html.P(f"Average PM2.5: {avg_pm:.2f} µg/m³"),
             html.P(f"Max PM2.5: {df['pm.2.5'].max():.2f} µg/m³"),
             html.P(f"Min PM2.5: {df['pm.2.5'].min():.2f} µg/m³"),
             html.P(f"Peak PM2.5 Hour: {peak_hour}:00"),
             html.P(f"Average Temperature: {df['tempF'].mean():.2f} °F"),
             html.P(f"Average Humidity: {df['rh'].mean():.2f} %"),
-            html.P(f"Average Heat Index: {df['heat_index'].mean():.2f} °F")
-        ]
-
-        if 'aqi' in df.columns:
-            summary_text.append(html.P(f"Average AQI: {df['aqi'].mean():.2f}"))
-
-        summary_text.append(html.H4("Daily Averages:"))
-        summary_text.append(
+            html.P(f"Average AQI: {df['aqi'].mean():.2f}"),
+            html.P(f"Average Heat Index: {df['heat_index'].mean():.2f} °F"),
+            html.H4("Daily Averages:"),
             dcc.Graph(
                 figure=go.Figure(
                     data=[go.Scatter(x=daily_avg['date'], y=daily_avg[col], mode='lines+markers', name=col)
-                          for col in daily_avg_cols],
+                          for col in ['pm.2.5', 'tempF', 'rh', 'aqi', 'heat_index']],
                     layout=go.Layout(
-                        title="Daily Average Environmental Metrics",
+                        title="Daily Averages of Environmental Metrics",
                         xaxis_title="Date",
-                        yaxis_title="Value",
+                        yaxis_title="Measured Value",
                         template='plotly_white'
                     )
                 )
             )
-        )
+        ]
         return html.Div(summary_text)
 
     elif metric in df.columns:
@@ -175,14 +166,27 @@ def render_dynamic_content(device, start_date, end_date, metric):
         outdoor_hourly = outdoor_df.groupby('hour')[metric].mean().reset_index()
 
         fig = go.Figure()
-        fig.add_trace(go.Scatter(x=df['time'], y=df[metric], mode='lines', name=f"Indoor Device {metric}"))
-        fig.add_trace(go.Scatter(x=outdoor_df['time'], y=outdoor_df[metric], mode='lines', name="Outdoor Sensor"))
-        fig.update_layout(title=f"{metric} Over Time", xaxis_title="Time", yaxis_title=metric, template='plotly_white')
+        fig.add_trace(go.Scatter(x=df['time'], y=df[metric], mode='lines', name=f"Device {device}"))
+        fig.add_trace(go.Scatter(x=outdoor_df['time'], y=outdoor_df[metric], mode='lines', name="Outdoor Device"))
+        fig.update_layout(
+            title=f"{metric} Measurements Over Time",
+            xaxis_title="Time",
+            yaxis_title=f"{metric} Value",
+            legend_title="Measurement Source",
+            template='plotly_white'
+        )
 
         trace_fig = go.Figure()
-        trace_fig.add_trace(go.Scatter(x=hourly_avg['hour'], y=hourly_avg[metric], mode='lines+markers', name='Indoor Hourly Avg'))
-        trace_fig.add_trace(go.Scatter(x=outdoor_hourly['hour'], y=outdoor_hourly[metric], mode='lines+markers', name='Outdoor Hourly Avg'))
-        trace_fig.update_layout(title=f"Hourly Average {metric}", xaxis_title="Hour of Day", yaxis_title=f"Average {metric}", template='plotly_white')
+        trace_fig.add_trace(go.Scatter(x=hourly_avg['hour'], y=hourly_avg[metric], mode='lines+markers', name=f'Device {device} Avg'))
+        if metric in outdoor_hourly.columns:
+            trace_fig.add_trace(go.Scatter(x=outdoor_hourly['hour'], y=outdoor_hourly[metric], mode='lines+markers', name='Outdoor Avg'))
+        trace_fig.update_layout(
+            title=f"Hourly Averages of {metric}",
+            xaxis_title="Hour of Day",
+            yaxis_title=f"Average {metric} Value",
+            legend_title="Measurement Source",
+            template='plotly_white'
+        )
 
         return html.Div([
             dcc.Graph(figure=fig),
