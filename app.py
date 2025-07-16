@@ -9,7 +9,7 @@ import plotly.graph_objects as go
 base_dir = os.path.dirname(os.path.abspath(__file__))
 data_dir = os.path.join(base_dir, 'data_processed')
 
-# Initialize the Dash app
+# Initialize the Dash app with a white theme template
 app = dash.Dash(__name__, suppress_callback_exceptions=True)
 app.title = "Environmental Data Dashboard"
 server = app.server
@@ -62,22 +62,24 @@ def calculate_heat_index(temp_f, rh):
 def get_device_options():
     return [{'label': f[:-4], 'value': f[:-4]} for f in get_device_files()]
 
-app.layout = html.Div([
-    dcc.Location(id='url', refresh=False),
-    html.Div(className='container', children=[
-        html.H1('Environmental Data Dashboard'),
-        dcc.Dropdown(
-            id='page-dropdown',
-            options=[{'label': 'Home', 'value': '/'}, {'label': 'About', 'value': '/about'}],
-            value='/', clearable=False, style={'marginBottom': '20px'}
-        ),
-        html.Div(id='page-content')
-    ])
-])
+# EPA PM2.5 AQI Categories
+def get_pm25_aqi_category(avg_pm):
+    if avg_pm <= 12.0:
+        return "🟢 Good (0–12 µg/m³)", "green"
+    elif avg_pm <= 35.4:
+        return "🟡 Moderate (12.1–35.4 µg/m³)", "yellow"
+    elif avg_pm <= 55.4:
+        return "🟠 Unhealthy for Sensitive Groups (35.5–55.4 µg/m³)", "orange"
+    elif avg_pm <= 150.4:
+        return "🔴 Unhealthy (55.5–150.4 µg/m³)", "red"
+    elif avg_pm <= 250.4:
+        return "🟣 Very Unhealthy (150.5–250.4 µg/m³)", "purple"
+    else:
+        return "🟥 Hazardous (250.5+ µg/m³)", "maroon"
 
-home_layout = html.Div([
-    html.H2('Indoor Air Quality Dashboard'),
-    html.P('This dashboard presents environmental data collected by your device.'),
+# Page layout with metric selector
+app.layout = html.Div([
+    html.H1('Environmental Data Dashboard'),
     dcc.Dropdown(
         id='device-dropdown',
         options=get_device_options(),
@@ -89,125 +91,98 @@ home_layout = html.Div([
         start_date_placeholder_text="Start Date",
         end_date_placeholder_text="End Date"
     ),
-    html.Div(id='average-output'),
-    html.Div([
-        html.H3("Particulate Matter Over Time"),
-        dcc.Graph(id='pm-graph')
-    ]),
-    html.Div([
-        html.H3("Temperature and Humidity Over Time"),
-        dcc.Graph(id='temp-humidity-graph')
-    ]),
-    html.Div([
-        html.H3("Air Quality Index Over Time"),
-        dcc.Graph(id='aqi-graph')
-    ]),
-    html.Div([
-        html.H3("Heat Index Over Time"),
-        dcc.Graph(id='heat-index-graph')
-    ])
+    dcc.Dropdown(
+        id='metric-selector',
+        options=[
+            {'label': 'Summary', 'value': 'summary'},
+            {'label': 'PM2.5', 'value': 'pm.2.5'},
+            {'label': 'Temperature', 'value': 'tempF'},
+            {'label': 'Humidity', 'value': 'rh'},
+            {'label': 'AQI', 'value': 'aqi'},
+            {'label': 'Heat Index', 'value': 'heat_index'}
+        ],
+        value='summary',
+        placeholder="Select metric to view",
+        style={'marginBottom': '20px'}
+    ),
+    html.Div(id='dynamic-content')
 ])
-
-about_layout = html.Div([
-    html.H2('About This Dashboard'),
-    html.P('This dashboard collects and presents various environmental data:'),
-    html.Ul([
-        html.Li('Particulate Matter levels (PM1.0, PM2.5, PM10)'),
-        html.Li('Temperature and Humidity'),
-        html.Li('Air Quality Index (AQI)'),
-        html.Li('Heat Index')
-    ]),
-    html.P('NYC Air Resources:'),
-    html.Ul([
-        html.Li(html.A('NYC Air Quality Data', href='https://www.nyc.gov/site/doh/health/health-topics/air-quality.page', target='_blank')),
-        html.Li(html.A('EPA Air Quality Resources', href='https://www.epa.gov/air-trends', target='_blank'))
-    ])
-])
-
-@app.callback(Output('page-content', 'children'), [Input('page-dropdown', 'value')])
-def display_page(value):
-    return about_layout if value == '/about' else home_layout
 
 @app.callback(
-    [Output('pm-graph', 'figure'),
-     Output('temp-humidity-graph', 'figure'),
-     Output('aqi-graph', 'figure'),
-     Output('heat-index-graph', 'figure'),
-     Output('average-output', 'children')],
+    Output('dynamic-content', 'children'),
     [Input('device-dropdown', 'value'),
      Input('date-picker-range', 'start_date'),
-     Input('date-picker-range', 'end_date')]
+     Input('date-picker-range', 'end_date'),
+     Input('metric-selector', 'value')]
 )
-def update_graphs(selected_device, start_date, end_date):
-    if not selected_device or not start_date or not end_date:
-        return {}, {}, {}, {}, ""
+def render_dynamic_content(device, start_date, end_date, metric):
+    if not device or not start_date or not end_date:
+        return html.Div("Please select a device and date range.")
 
-    start_date = pd.to_datetime(start_date).tz_localize('UTC')
-    end_date = pd.to_datetime(end_date).tz_localize('UTC')
+    df = load_data(data_dir, device)
+    df = df[(df['time'] >= pd.to_datetime(start_date)) & (df['time'] <= pd.to_datetime(end_date))]
 
-    data = load_data(data_dir, selected_device)
-    if 'time' not in data.columns:
-        return {}, {}, {}, {}, "No data available."
-    
-    data = data[(data['time'] >= start_date) & (data['time'] <= end_date)]
-    if data.empty:
-        return {}, {}, {}, {}, "No data for selected range."
+    if df.empty:
+        return html.Div("No data available for the selected range.")
 
-    outdoor_data = load_data(data_dir, '88439')
-    outdoor_data = outdoor_data[(outdoor_data['time'] >= start_date) & (outdoor_data['time'] <= end_date)]
+    df['heat_index'] = df.apply(lambda row: calculate_heat_index(row['tempF'], row['rh']), axis=1)
 
-    avg_pm25 = data['pm.2.5'].mean()
-    avg_tempF = data['tempF'].mean()
-    avg_humid = data['rh'].mean()
-    avg_aqi = data['aqi'].mean()
-    avg_heat_index = data.apply(lambda row: calculate_heat_index(row['tempF'], row['rh']), axis=1).mean()
+    if metric == 'summary':
+        avg_pm = df['pm.2.5'].mean()
+        category_label, color = get_pm25_aqi_category(avg_pm)
 
-    avg_output = (f"Average PM2.5: {avg_pm25:.2f} µg/m³, "
-                  f"Temp: {avg_tempF:.2f} °F, "
-                  f"Humidity: {avg_humid:.2f} %, "
-                  f"AQI: {avg_aqi:.2f}, "
-                  f"Heat Index: {avg_heat_index:.2f} °F")
+        df['date'] = df['time'].dt.date
+        daily_avg = df.groupby('date')[['pm.2.5', 'tempF', 'rh', 'aqi', 'heat_index']].mean().reset_index()
 
-    pm_fig = go.Figure()
-    pm_fig.add_trace(go.Scatter(x=data['time'], y=data['pm.2.5'], mode='lines', name='Indoor PM2.5'))
-    pm_fig.add_trace(go.Scatter(x=outdoor_data['time'], y=outdoor_data['pm.2.5'], mode='lines', name='Outdoor PM2.5'))
-    pm_fig.update_layout(title='Particulate Matter Over Time')
+        peak_hour = df.groupby(df['time'].dt.hour)['pm.2.5'].mean().idxmax()
 
-    temp_humidity_fig = go.Figure()
-    temp_humidity_fig.add_trace(go.Scatter(x=data['time'], y=data['tempF'], mode='lines', name='Indoor Temp'))
-    temp_humidity_fig.add_trace(go.Scatter(x=data['time'], y=data['rh'], mode='lines', name='Indoor RH', yaxis='y2'))
-    temp_humidity_fig.add_trace(go.Scatter(x=outdoor_data['time'], y=outdoor_data['tempF'], mode='lines', name='Outdoor Temp'))
-    temp_humidity_fig.add_trace(go.Scatter(x=outdoor_data['time'], y=outdoor_data['rh'], mode='lines', name='Outdoor RH', yaxis='y2'))
-    temp_humidity_fig.update_layout(
-        title='Temperature and Humidity Over Time',
-        yaxis=dict(title='Temperature (°F)'),
-        yaxis2=dict(title='Humidity (%)', overlaying='y', side='right')
-    )
+        summary_text = [
+            html.H3("Summary Report"),
+            html.Div(f"Air Quality Status: {category_label}", style={'color': color, 'fontWeight': 'bold'}),
+            html.P(f"Average PM2.5: {avg_pm:.2f} µg/m³"),
+            html.P(f"Max PM2.5: {df['pm.2.5'].max():.2f} µg/m³"),
+            html.P(f"Min PM2.5: {df['pm.2.5'].min():.2f} µg/m³"),
+            html.P(f"Peak PM2.5 Hour: {peak_hour}:00"),
+            html.P(f"Average Temperature: {df['tempF'].mean():.2f} °F"),
+            html.P(f"Max Temperature: {df['tempF'].max():.2f} °F"),
+            html.P(f"Min Temperature: {df['tempF'].min():.2f} °F"),
+            html.P(f"Average Humidity: {df['rh'].mean():.2f} %"),
+            html.P(f"Average AQI: {df['aqi'].mean():.2f}"),
+            html.P(f"Average Heat Index: {df['heat_index'].mean():.2f} °F"),
+            html.H4("Daily Averages:"),
+            dcc.Graph(
+                figure=go.Figure(
+                    data=[
+                        go.Scatter(x=daily_avg['date'], y=daily_avg[col], mode='lines+markers', name=col)
+                        for col in ['pm.2.5', 'tempF', 'rh', 'aqi', 'heat_index']
+                    ],
+                    layout=go.Layout(
+                        title="Daily Average Environmental Metrics",
+                        xaxis_title="Date",
+                        yaxis_title="Value",
+                        template='plotly_white'
+                    )
+                )
+            )
+        ]
+        return html.Div(summary_text)
 
-    aqi_fig = go.Figure()
-    aqi_fig.add_trace(go.Scatter(x=data['time'], y=data['aqi'], mode='lines', name='Indoor AQI'))
-    aqi_fig.add_trace(go.Scatter(x=outdoor_data['time'], y=outdoor_data['aqi'], mode='lines', name='Outdoor AQI'))
-    aqi_fig.update_layout(
-        title='Air Quality Index Over Time',
-        xaxis_title='Time',
-        yaxis_title='AQI',
-        showlegend=True
-    )
+    elif metric in df.columns:
+        df['hour'] = df['time'].dt.hour
+        hourly_avg = df.groupby('hour')[metric].mean().reset_index()
 
-    data['heat_index'] = data.apply(lambda row: calculate_heat_index(row['tempF'], row['rh']), axis=1)
-    outdoor_data['heat_index'] = outdoor_data.apply(lambda row: calculate_heat_index(row['tempF'], row['rh']), axis=1)
-    heat_fig = go.Figure()
-    heat_fig.add_trace(go.Scatter(x=data['time'], y=data['heat_index'], mode='lines', name='Indoor Heat Index'))
-    heat_fig.add_trace(go.Scatter(x=outdoor_data['time'], y=outdoor_data['heat_index'], mode='lines', name='Outdoor Heat Index'))
-    heat_fig.update_layout(
-        title='Heat Index Over Time',
-        xaxis_title='Time',
-        yaxis_title='Heat Index (°F)',
-        showlegend=True
-    )
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=df['time'], y=df[metric], mode='lines', name=metric))
+        fig.update_layout(title=f"{metric} Over Time", xaxis_title="Time", yaxis_title=metric, template='plotly_white')
 
-    return pm_fig, temp_humidity_fig, aqi_fig, heat_fig, avg_output
+        bar_fig = go.Figure()
+        bar_fig.add_trace(go.Bar(x=hourly_avg['hour'], y=hourly_avg[metric], name=f'Avg {metric}'))
+        bar_fig.update_layout(title=f"Hourly Average {metric}", xaxis_title="Hour of Day", yaxis_title=f"Average {metric}", template='plotly_white')
 
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run_server(debug=False, host='0.0.0.0', port=port)
+        return html.Div([
+            dcc.Graph(figure=fig),
+            dcc.Graph(figure=bar_fig)
+        ])
+
+    else:
+        return html.Div("Invalid metric selected.")
