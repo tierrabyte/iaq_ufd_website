@@ -23,37 +23,22 @@ def celsius_to_fahrenheit(tempC):
         return None
 
 # Function to attempt to fix and convert time to Eastern Time, handling each device type
+
+from pytz import timezone
+
 def convert_to_eastern_time(time_column, device_type):
-    """
-    Convert the time column to Eastern Time. Handles timezone-awareness for various device types.
-    """
-    # Ensure the time_column is a Series and coerce to string for processing
-    time_column = time_column.astype(str)  # Ensure all entries are strings
     try:
-        if device_type == 'mcci':
-            # Parse datetime; assume UTC
-            time_column = pd.to_datetime(time_column, errors='coerce', utc=True)
-            return time_column.dt.tz_convert('America/New_York')  # Convert to Eastern Time
-        elif device_type in ['awair', 'purpleair']:
-            # Assume timezone-naive or UTC
-            time_column = pd.to_datetime(time_column, errors='coerce')
-            if time_column.isna().all():
-                raise ValueError("All entries in the time column failed to parse.")
-            # Handle timezone localization
-            if time_column.dt.tz is None:
-                return time_column.dt.tz_localize('America/New_York', ambiguous='NaT', nonexistent='shift_forward')
-            else:
-                return time_column.dt.tz_convert('America/New_York')
+        if device_type == 'awair':
+            dt_series = pd.to_datetime(time_column, errors='coerce')
+            dt_series = dt_series.dt.tz_localize('America/New_York', ambiguous='NaT', nonexistent='shift_forward')
         else:
-            # Default case: Fallback for general datetime parsing
-            time_column = pd.to_datetime(time_column, errors='coerce')
-            return time_column.dt.tz_localize('America/New_York', ambiguous='NaT', nonexistent='shift_forward')
+            dt_series = pd.to_datetime(time_column, errors='coerce', utc=True)
+            dt_series = dt_series.dt.tz_convert('America/New_York')
+        return dt_series
     except Exception as e:
-        print(f"Error converting to Eastern Time for {device_type}: {e}")
-        return pd.Series([pd.NaT] * len(time_column))  # Return NaT for all rows in case of failure
-
-
-# Function to standardize column names for Awair files
+        print(f"[ERROR] Converting {device_type} to Eastern time: {e}")
+        return pd.Series([pd.NaT] * len(time_column))
+    
 def standardize_awair_columns(df):
     column_mapping = {
         'timestamp(America/New_York)': 'time',
@@ -116,14 +101,14 @@ for device, data_list in device_data.items():
     output_file = os.path.join(output_dir, f'{device}.csv')
     if os.path.exists(output_file):
         existing_data = pd.read_csv(output_file)
-        existing_data['time'] = pd.to_datetime(existing_data['time'], errors='coerce',utc=True)
+        existing_data['time'] = pd.to_datetime(existing_data['time'], errors='coerce', utc=True)
+        existing_data['time'] = existing_data['time'].dt.tz_convert('America/New_York')
         combined_data = pd.concat([existing_data, combined_data]).drop_duplicates(subset=['time']).sort_values(by='time')
     
     # Save the combined data to the file
     combined_data.to_csv(output_file, index=False)
     print(f"Processed and updated MCCI file saved: {output_file}")
 
-# Process PurpleAir files (includes timezone offset)
 # Process PurpleAir files (includes timezone offset)
 purple_files = {}
 for file in os.listdir(input_dirs['purpleair']):
@@ -139,13 +124,8 @@ for file in os.listdir(input_dirs['purpleair']):
         # Standardize column names
         data = standardize_purpleair_columns(data)
         
-        # Convert the time column to UTC
-        data['time'] = pd.to_datetime(data['time'], errors='coerce', utc=True)
-        
-        # Debug invalid timestamps
-        if data['time'].isna().any():
-            print(f"Invalid timestamps found in file: {file_path}")
-            print(data[data['time'].isna()])
+        # Convert the time column to Eastern Time (already includes timezone)
+        data['time'] = convert_to_eastern_time(data['time'], 'purpleair')
         
         # Filter out rows where 'time' is invalid (NaT)
         data = data[data['time'].notna()]
@@ -154,30 +134,43 @@ for file in os.listdir(input_dirs['purpleair']):
 
 # Combine and save PurpleAir data
 for base_name, data_list in purple_files.items():
-    combined_data = pd.concat(data_list, ignore_index=True).drop_duplicates(subset=['time']).sort_values(by='time')
+    combined_data = pd.concat(data_list).drop_duplicates(subset=['time']).sort_values(by='time')
     
-    # Path to the existing processed file
+    # Save the combined data to the file
     output_file = os.path.join(output_dir, f'{base_name}.csv')
-    
-    if os.path.exists(output_file):
-        # Read existing data and ensure proper datetime parsing
-        existing_data = pd.read_csv(output_file)
-        existing_data['time'] = pd.to_datetime(existing_data['time'], errors='coerce', utc=True)
-        
-        # Debug existing data range
-        print(f"Existing data range for {base_name}: {existing_data['time'].min()} to {existing_data['time'].max()}")
-        
-        # Concatenate with new data
-        combined_data = pd.concat([existing_data, combined_data], ignore_index=True)
-        combined_data = combined_data.drop_duplicates(subset=['time']).sort_values(by='time')
-    
-    # Debug the combined data range
-    print(f"Saving data for {base_name}.")
-    print(f"Combined data range: {combined_data['time'].min()} to {combined_data['time'].max()}")
-    
-    # Save to file
     combined_data.to_csv(output_file, index=False)
     print(f"Processed and updated PurpleAir file saved: {output_file}")
 
+# Process Awair files (in Eastern Time, no explicit timezone)
+awair_files = {}
+for file in os.listdir(input_dirs['awair']):
+    if file.endswith('.csv'):
+        file_path = os.path.join(input_dirs['awair'], file)
+        base_name = re.sub(r'\(\d+\)', '', os.path.splitext(file)[0]).strip()
+        
+        if base_name not in awair_files:
+            awair_files[base_name] = []
+        
+        data = pd.read_csv(file_path)
+        
+        # Standardize column names
+        data = standardize_awair_columns(data)
+        
+        # Convert the time column to Eastern Time
+        data['time'] = convert_to_eastern_time(data['time'], 'awair')
+        
+        # Filter out rows where 'time' is invalid (NaT)
+        data = data[data['time'].notna()]
+        
+        awair_files[base_name].append(data)
+
+# Combine and save Awair data
+for base_name, data_list in awair_files.items():
+    combined_data = pd.concat(data_list).drop_duplicates(subset=['time']).sort_values(by='time')
+    
+    # Save the combined data to the file
+    output_file = os.path.join(output_dir, f'{base_name}.csv')
+    combined_data.to_csv(output_file, index=False)
+    print(f"Processed and updated Awair file saved: {output_file}")
 
 print("Processing complete. Files saved in:", output_dir)

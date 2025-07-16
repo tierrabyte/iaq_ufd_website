@@ -73,9 +73,9 @@ def get_pm25_aqi_category(avg_pm):
     elif avg_pm <= 150.4:
         return "🔴 Unhealthy (55.5–150.4 µg/m³)", "red"
     elif avg_pm <= 250.4:
-        return "🟣 Very Unhealthy (150.5–250.4 µg/m³)", "purple"
+        return "🕷️ Very Unhealthy (150.5–250.4 µg/m³)", "purple"
     else:
-        return "🟥 Hazardous (250.5+ µg/m³)", "maroon"
+        return "🔵 Hazardous (250.5+ µg/m³)", "maroon"
 
 # Page layout with metric selector
 app.layout = html.Div([
@@ -186,7 +186,6 @@ def render_dynamic_content(device, start_date, end_date, metric):
 
     else:
         return html.Div("Invalid metric selected.")
-
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
