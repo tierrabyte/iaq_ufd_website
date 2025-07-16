@@ -4,6 +4,7 @@ import dash
 from dash import dcc, html
 from dash.dependencies import Input, Output
 import plotly.graph_objects as go
+import pytz
 
 # Resolve base path relative to this file
 base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -14,7 +15,7 @@ app = dash.Dash(__name__, suppress_callback_exceptions=True)
 app.title = "Environmental Data Dashboard"
 server = app.server
 
-# Helper to safely list available devices
+# Load data safely without timezone conversion (already handled externally)
 def get_device_files():
     try:
         return sorted([f for f in os.listdir(data_dir) if f.endswith('.csv')])
@@ -58,11 +59,9 @@ def calculate_heat_index(temp_f, rh):
         heat_index += adjustment
     return heat_index
 
-# Dynamic device dropdown options
 def get_device_options():
     return [{'label': f[:-4], 'value': f[:-4]} for f in get_device_files()]
 
-# EPA PM2.5 AQI Categories
 def get_pm25_aqi_category(avg_pm):
     if avg_pm <= 12.0:
         return "🟢 Good (0–12 µg/m³)", "green"
@@ -73,24 +72,15 @@ def get_pm25_aqi_category(avg_pm):
     elif avg_pm <= 150.4:
         return "🔴 Unhealthy (55.5–150.4 µg/m³)", "red"
     elif avg_pm <= 250.4:
-        return "🕷️ Very Unhealthy (150.5–250.4 µg/m³)", "purple"
+        return "🔷 Very Unhealthy (150.5–250.4 µg/m³)", "purple"
     else:
         return "🔵 Hazardous (250.5+ µg/m³)", "maroon"
 
-# Page layout with metric selector
+# Layout
 app.layout = html.Div([
     html.H1('Environmental Data Dashboard'),
-    dcc.Dropdown(
-        id='device-dropdown',
-        options=get_device_options(),
-        placeholder="Select a device"
-    ),
-    dcc.DatePickerRange(
-        id='date-picker-range',
-        start_date=None, end_date=None,
-        start_date_placeholder_text="Start Date",
-        end_date_placeholder_text="End Date"
-    ),
+    dcc.Dropdown(id='device-dropdown', options=get_device_options(), placeholder="Select a device"),
+    dcc.DatePickerRange(id='date-picker-range'),
     dcc.Dropdown(
         id='metric-selector',
         options=[
@@ -102,7 +92,6 @@ app.layout = html.Div([
             {'label': 'Heat Index', 'value': 'heat_index'}
         ],
         value='summary',
-        placeholder="Select metric to view",
         style={'marginBottom': '20px'}
     ),
     html.Div(id='dynamic-content')
@@ -120,7 +109,13 @@ def render_dynamic_content(device, start_date, end_date, metric):
         return html.Div("Please select a device and date range.")
 
     df = load_data(data_dir, device)
-    df = df[(df['time'] >= pd.to_datetime(start_date)) & (df['time'] <= pd.to_datetime(end_date))]
+
+    # Localize the start and end to the same timezone as the data
+    eastern = pytz.timezone("America/New_York")
+    start_date = eastern.localize(pd.to_datetime(start_date).to_pydatetime())
+    end_date = eastern.localize(pd.to_datetime(end_date).to_pydatetime())
+
+    df = df[(df['time'] >= start_date) & (df['time'] <= end_date)]
 
     if df.empty:
         return html.Div("No data available for the selected range.")
@@ -144,18 +139,14 @@ def render_dynamic_content(device, start_date, end_date, metric):
             html.P(f"Min PM2.5: {df['pm.2.5'].min():.2f} µg/m³"),
             html.P(f"Peak PM2.5 Hour: {peak_hour}:00"),
             html.P(f"Average Temperature: {df['tempF'].mean():.2f} °F"),
-            html.P(f"Max Temperature: {df['tempF'].max():.2f} °F"),
-            html.P(f"Min Temperature: {df['tempF'].min():.2f} °F"),
             html.P(f"Average Humidity: {df['rh'].mean():.2f} %"),
             html.P(f"Average AQI: {df['aqi'].mean():.2f}"),
             html.P(f"Average Heat Index: {df['heat_index'].mean():.2f} °F"),
             html.H4("Daily Averages:"),
             dcc.Graph(
                 figure=go.Figure(
-                    data=[
-                        go.Scatter(x=daily_avg['date'], y=daily_avg[col], mode='lines+markers', name=col)
-                        for col in ['pm.2.5', 'tempF', 'rh', 'aqi', 'heat_index']
-                    ],
+                    data=[go.Scatter(x=daily_avg['date'], y=daily_avg[col], mode='lines+markers', name=col)
+                          for col in ['pm.2.5', 'tempF', 'rh', 'aqi', 'heat_index']],
                     layout=go.Layout(
                         title="Daily Average Environmental Metrics",
                         xaxis_title="Date",
@@ -184,10 +175,10 @@ def render_dynamic_content(device, start_date, end_date, metric):
             dcc.Graph(figure=bar_fig)
         ])
 
-    else:
-        return html.Div("Invalid metric selected.")
+    return html.Div("Invalid metric selected.")
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run_server(debug=False, host="0.0.0.0", port=port)
-  
+message.txt
+8 KB
