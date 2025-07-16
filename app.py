@@ -135,9 +135,7 @@ def render_dynamic_content(device, start_date, end_date, metric):
         category_label = get_pm25_aqi_category(avg_pm)
 
         df['date'] = df['time'].dt.date
-        daily_avg_cols = ['pm.2.5', 'tempF', 'rh', 'heat_index']
-        if 'aqi' in df.columns:
-            daily_avg_cols.append('aqi')
+        daily_avg_cols = ['pm.2.5', 'tempF', 'rh', 'heat_index', 'aqi']
 
         daily_avg = df.groupby('date')[daily_avg_cols].mean().reset_index()
         peak_hour = df.groupby(df['time'].dt.hour)['pm.2.5'].mean().idxmax()
@@ -151,11 +149,9 @@ def render_dynamic_content(device, start_date, end_date, metric):
             html.P(f"Peak PM2.5 Hour: {peak_hour}:00"),
             html.P(f"Average Temperature: {df['tempF'].mean():.2f} °F"),
             html.P(f"Average Humidity: {df['rh'].mean():.2f} %"),
-            html.P(f"Average Heat Index: {df['heat_index'].mean():.2f} °F")
+            html.P(f"Average Heat Index: {df['heat_index'].mean():.2f} °F"),
+            html.P(f"Average AQI: {df['aqi'].mean():.2f}")
         ]
-
-        if 'aqi' in df.columns:
-            summary_text.append(html.P(f"Average AQI: {df['aqi'].mean():.2f}"))
 
         summary_text.append(html.H4("Daily Averages:"))
         summary_text.append(
