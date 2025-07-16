@@ -28,7 +28,7 @@ def load_data(directory, device):
         file_path = os.path.join(directory, f'{device}.csv')
         if os.path.exists(file_path):
             df = pd.read_csv(file_path)
-            df['time'] = pd.to_datetime(df['time'], errors='coerce', utc=True).dt.tz_convert('America/New_York')
+            df['time'] = pd.to_datetime(df['time'], errors='coerce')
             df = df[df['time'].notna()]
             return df
     except Exception as e:
@@ -149,9 +149,9 @@ def render_dynamic_content(device, start_date, end_date, metric):
                     data=[go.Scatter(x=daily_avg['date'], y=daily_avg[col], mode='lines+markers', name=col)
                           for col in ['pm.2.5', 'tempF', 'rh', 'aqi', 'heat_index']],
                     layout=go.Layout(
-                        title="Daily Average Environmental Metrics",
+                        title="Daily Averages of Environmental Metrics",
                         xaxis_title="Date",
-                        yaxis_title="Value",
+                        yaxis_title="Measured Value",
                         template='plotly_white'
                     )
                 )
@@ -166,14 +166,27 @@ def render_dynamic_content(device, start_date, end_date, metric):
         outdoor_hourly = outdoor_df.groupby('hour')[metric].mean().reset_index()
 
         fig = go.Figure()
-        fig.add_trace(go.Scatter(x=df['time'], y=df[metric], mode='lines', name=f"{device} {metric}"))
-        fig.add_trace(go.Scatter(x=outdoor_df['time'], y=outdoor_df[metric], mode='lines', name="Outdoor 88439"))
-        fig.update_layout(title=f"{metric} Over Time", xaxis_title="Time", yaxis_title=metric, template='plotly_white')
+        fig.add_trace(go.Scatter(x=df['time'], y=df[metric], mode='lines', name=f"Device {device}"))
+        fig.add_trace(go.Scatter(x=outdoor_df['time'], y=outdoor_df[metric], mode='lines', name="Outdoor Device"))
+        fig.update_layout(
+            title=f"{metric} Measurements Over Time",
+            xaxis_title="Time",
+            yaxis_title=f"{metric} Value",
+            legend_title="Measurement Source",
+            template='plotly_white'
+        )
 
         trace_fig = go.Figure()
-        trace_fig.add_trace(go.Scatter(x=hourly_avg['hour'], y=hourly_avg[metric], mode='lines+markers', name=f'{device} Avg {metric}'))
-        trace_fig.add_trace(go.Scatter(x=outdoor_hourly['hour'], y=outdoor_hourly[metric], mode='lines+markers', name='Outdoor Avg'))
-        trace_fig.update_layout(title=f"Hourly Average {metric}", xaxis_title="Hour of Day", yaxis_title=f"Average {metric}", template='plotly_white')
+        trace_fig.add_trace(go.Scatter(x=hourly_avg['hour'], y=hourly_avg[metric], mode='lines+markers', name=f'Device {device} Avg'))
+        if metric in outdoor_hourly.columns:
+            trace_fig.add_trace(go.Scatter(x=outdoor_hourly['hour'], y=outdoor_hourly[metric], mode='lines+markers', name='Outdoor Avg'))
+        trace_fig.update_layout(
+            title=f"Hourly Averages of {metric}",
+            xaxis_title="Hour of Day",
+            yaxis_title=f"Average {metric} Value",
+            legend_title="Measurement Source",
+            template='plotly_white'
+        )
 
         return html.Div([
             dcc.Graph(figure=fig),
