@@ -15,25 +15,23 @@ app = dash.Dash(__name__, suppress_callback_exceptions=True)
 app.title = "Environmental Data Dashboard"
 server = app.server
 
-# Load data safely without timezone conversion (already handled externally)
-def get_device_files():
-    try:
-        return sorted([f for f in os.listdir(data_dir) if f.endswith('.csv') and not f.startswith('88439')])
-    except Exception as e:
-        print(f"[ERROR] Cannot list data directory: {e}")
-        return []
-
+# Load data safely with explicit timezone awareness
 def load_data(directory, device):
     try:
         file_path = os.path.join(directory, f'{device}.csv')
         if os.path.exists(file_path):
             df = pd.read_csv(file_path)
-            df['time'] = pd.to_datetime(df['time'], errors='coerce', utc=True).dt.tz_convert('America/New_York')
+            df['time'] = pd.to_datetime(df['time'], errors='coerce')
             df = df[df['time'].notna()]
+            if df['time'].dt.tz is None:
+                df['time'] = df['time'].dt.tz_localize('America/New_York')
+            else:
+                df['time'] = df['time'].dt.tz_convert('America/New_York')
             return df
     except Exception as e:
         print(f"[WARN] Failed to load device {device}: {e}")
     return pd.DataFrame()
+
 
 def calculate_heat_index(temp_f, rh):
     c1 = -42.379
@@ -59,37 +57,43 @@ def calculate_heat_index(temp_f, rh):
         heat_index += adjustment
     return heat_index
 
+
 def get_device_options():
-    return [{'label': f[:-4], 'value': f[:-4]} for f in get_device_files()]
+    try:
+        return [{'label': f[:-4], 'value': f[:-4]} for f in sorted(os.listdir(data_dir)) if f.endswith('.csv') and not f.startswith('88439')]
+    except Exception as e:
+        print(f"[ERROR] Device listing failed: {e}")
+        return []
+
 
 def get_pm25_aqi_category(avg_pm):
     if avg_pm <= 12.0:
-        return "🟢 Good (0–12 µg/m³)", "green"
+        return "🟢 Good (0–12 µg/m³)"
     elif avg_pm <= 35.4:
-        return "🟡 Moderate (12.1–35.4 µg/m³)", "yellow"
+        return "🟡 Moderate (12.1–35.4 µg/m³)"
     elif avg_pm <= 55.4:
-        return "🟠 Unhealthy for Sensitive Groups (35.5–55.4 µg/m³)", "orange"
+        return "🟠 Unhealthy for Sensitive Groups (35.5–55.4 µg/m³)"
     elif avg_pm <= 150.4:
-        return "🔴 Unhealthy (55.5–150.4 µg/m³)", "red"
+        return "🔴 Unhealthy (55.5–150.4 µg/m³)"
     elif avg_pm <= 250.4:
-        return "🔷 Very Unhealthy (150.5–250.4 µg/m³)", "purple"
+        return "🔷 Very Unhealthy (150.5–250.4 µg/m³)"
     else:
-        return "🔵 Hazardous (250.5+ µg/m³)", "maroon"
+        return "🔵 Hazardous (250.5+ µg/m³)"
 
 # Layout
 app.layout = html.Div([
     html.H1('Environmental Data Dashboard'),
-    dcc.Dropdown(id='device-dropdown', options=get_device_options(), placeholder="Select a device"),
+    dcc.Dropdown(id='device-dropdown', options=get_device_options(), placeholder="Select an indoor device"),
     dcc.DatePickerRange(id='date-picker-range'),
     dcc.Dropdown(
         id='metric-selector',
         options=[
             {'label': 'Summary', 'value': 'summary'},
-            {'label': 'PM2.5', 'value': 'pm.2.5'},
-            {'label': 'Temperature', 'value': 'tempF'},
-            {'label': 'Humidity', 'value': 'rh'},
-            {'label': 'AQI', 'value': 'aqi'},
-            {'label': 'Heat Index', 'value': 'heat_index'}
+            {'label': 'PM2.5 Concentration (µg/m³)', 'value': 'pm.2.5'},
+            {'label': 'Temperature (°F)', 'value': 'tempF'},
+            {'label': 'Humidity (%)', 'value': 'rh'},
+            {'label': 'Air Quality Index (AQI)', 'value': 'aqi'},
+            {'label': 'Heat Index (°F)', 'value': 'heat_index'}
         ],
         value='summary',
         style={'marginBottom': '20px'}
@@ -111,8 +115,11 @@ def render_dynamic_content(device, start_date, end_date, metric):
     df = load_data(data_dir, device)
     outdoor_df = load_data(data_dir, '88439')
 
-    start_date = pd.to_datetime(start_date).tz_localize('America/New_York')
-    end_date = pd.to_datetime(end_date).tz_localize('America/New_York')
+    try:
+        start_date = pd.to_datetime(start_date).tz_localize('America/New_York')
+        end_date = pd.to_datetime(end_date).tz_localize('America/New_York')
+    except Exception as e:
+        return html.Div(f"Date parsing failed: {e}")
 
     df = df[(df['time'] >= start_date) & (df['time'] <= end_date)]
     outdoor_df = outdoor_df[(outdoor_df['time'] >= start_date) & (outdoor_df['time'] <= end_date)]
@@ -125,29 +132,33 @@ def render_dynamic_content(device, start_date, end_date, metric):
 
     if metric == 'summary':
         avg_pm = df['pm.2.5'].mean()
-        category_label, color = get_pm25_aqi_category(avg_pm)
+        category_label = get_pm25_aqi_category(avg_pm)
 
         df['date'] = df['time'].dt.date
-        daily_avg = df.groupby('date')[['pm.2.5', 'tempF', 'rh', 'aqi', 'heat_index']].mean().reset_index()
+        daily_avg_cols = ['pm.2.5', 'tempF', 'rh', 'heat_index', 'aqi']
 
+        daily_avg = df.groupby('date')[daily_avg_cols].mean().reset_index()
         peak_hour = df.groupby(df['time'].dt.hour)['pm.2.5'].mean().idxmax()
 
         summary_text = [
             html.H3("Summary Report"),
-            html.Div(f"Air Quality Status: {category_label}", style={'color': color, 'fontWeight': 'bold'}),
+            html.Div(f"Air Quality Status: {category_label}", style={'fontWeight': 'bold'}),
             html.P(f"Average PM2.5: {avg_pm:.2f} µg/m³"),
             html.P(f"Max PM2.5: {df['pm.2.5'].max():.2f} µg/m³"),
             html.P(f"Min PM2.5: {df['pm.2.5'].min():.2f} µg/m³"),
             html.P(f"Peak PM2.5 Hour: {peak_hour}:00"),
             html.P(f"Average Temperature: {df['tempF'].mean():.2f} °F"),
             html.P(f"Average Humidity: {df['rh'].mean():.2f} %"),
-            html.P(f"Average AQI: {df['aqi'].mean():.2f}"),
             html.P(f"Average Heat Index: {df['heat_index'].mean():.2f} °F"),
-            html.H4("Daily Averages:"),
+            html.P(f"Average AQI: {df['aqi'].mean():.2f}")
+        ]
+
+        summary_text.append(html.H4("Daily Averages:"))
+        summary_text.append(
             dcc.Graph(
                 figure=go.Figure(
                     data=[go.Scatter(x=daily_avg['date'], y=daily_avg[col], mode='lines+markers', name=col)
-                          for col in ['pm.2.5', 'tempF', 'rh', 'aqi', 'heat_index']],
+                          for col in daily_avg_cols],
                     layout=go.Layout(
                         title="Daily Average Environmental Metrics",
                         xaxis_title="Date",
@@ -156,23 +167,27 @@ def render_dynamic_content(device, start_date, end_date, metric):
                     )
                 )
             )
-        ]
+        )
         return html.Div(summary_text)
 
     elif metric in df.columns:
         df['hour'] = df['time'].dt.hour
-        outdoor_df['hour'] = outdoor_df['time'].dt.hour
+        if metric in outdoor_df.columns:
+            outdoor_df['hour'] = outdoor_df['time'].dt.hour
+
         hourly_avg = df.groupby('hour')[metric].mean().reset_index()
-        outdoor_hourly = outdoor_df.groupby('hour')[metric].mean().reset_index()
+        trace_fig = go.Figure()
+        trace_fig.add_trace(go.Scatter(x=hourly_avg['hour'], y=hourly_avg[metric], mode='lines+markers', name='Indoor Hourly Avg'))
 
         fig = go.Figure()
-        fig.add_trace(go.Scatter(x=df['time'], y=df[metric], mode='lines', name=f"{device} {metric}"))
-        fig.add_trace(go.Scatter(x=outdoor_df['time'], y=outdoor_df[metric], mode='lines', name="Outdoor 88439"))
-        fig.update_layout(title=f"{metric} Over Time", xaxis_title="Time", yaxis_title=metric, template='plotly_white')
+        fig.add_trace(go.Scatter(x=df['time'], y=df[metric], mode='lines', name="Indoor Sensor"))
 
-        trace_fig = go.Figure()
-        trace_fig.add_trace(go.Scatter(x=hourly_avg['hour'], y=hourly_avg[metric], mode='lines+markers', name=f'{device} Avg {metric}'))
-        trace_fig.add_trace(go.Scatter(x=outdoor_hourly['hour'], y=outdoor_hourly[metric], mode='lines+markers', name='Outdoor Avg'))
+        if metric in outdoor_df.columns:
+            outdoor_hourly = outdoor_df.groupby('hour')[metric].mean().reset_index()
+            trace_fig.add_trace(go.Scatter(x=outdoor_hourly['hour'], y=outdoor_hourly[metric], mode='lines+markers', name='Outdoor Hourly Avg'))
+            fig.add_trace(go.Scatter(x=outdoor_df['time'], y=outdoor_df[metric], mode='lines', name="Outdoor Sensor"))
+
+        fig.update_layout(title=f"{metric} Over Time", xaxis_title="Time", yaxis_title=metric, template='plotly_white')
         trace_fig.update_layout(title=f"Hourly Average {metric}", xaxis_title="Hour of Day", yaxis_title=f"Average {metric}", template='plotly_white')
 
         return html.Div([
