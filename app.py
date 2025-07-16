@@ -15,14 +15,7 @@ app = dash.Dash(__name__, suppress_callback_exceptions=True)
 app.title = "Environmental Data Dashboard"
 server = app.server
 
-# Load data safely without timezone conversion (already handled externally)
-def get_device_files():
-    try:
-        return sorted([f for f in os.listdir(data_dir) if f.endswith('.csv') and not f.startswith('88439')])
-    except Exception as e:
-        print(f"[ERROR] Cannot list data directory: {e}")
-        return []
-
+# Load data safely with explicit timezone awareness
 def load_data(directory, device):
     try:
         file_path = os.path.join(directory, f'{device}.csv')
@@ -30,10 +23,12 @@ def load_data(directory, device):
             df = pd.read_csv(file_path)
             df['time'] = pd.to_datetime(df['time'], errors='coerce')
             df = df[df['time'].notna()]
+            df['time'] = df['time'].dt.tz_convert('America/New_York') if df['time'].dt.tz is not None else df['time'].dt.tz_localize('America/New_York')
             return df
     except Exception as e:
         print(f"[WARN] Failed to load device {device}: {e}")
     return pd.DataFrame()
+
 
 def calculate_heat_index(temp_f, rh):
     c1 = -42.379
@@ -59,8 +54,14 @@ def calculate_heat_index(temp_f, rh):
         heat_index += adjustment
     return heat_index
 
+
 def get_device_options():
-    return [{'label': f[:-4], 'value': f[:-4]} for f in get_device_files()]
+    try:
+        return [{'label': f[:-4], 'value': f[:-4]} for f in sorted(os.listdir(data_dir)) if f.endswith('.csv') and not f.startswith('88439')]
+    except Exception as e:
+        print(f"[ERROR] Device listing failed: {e}")
+        return []
+
 
 def get_pm25_aqi_category(avg_pm):
     if avg_pm <= 12.0:
@@ -79,17 +80,17 @@ def get_pm25_aqi_category(avg_pm):
 # Layout
 app.layout = html.Div([
     html.H1('Environmental Data Dashboard'),
-    dcc.Dropdown(id='device-dropdown', options=get_device_options(), placeholder="Select a device"),
+    dcc.Dropdown(id='device-dropdown', options=get_device_options(), placeholder="Select an indoor device"),
     dcc.DatePickerRange(id='date-picker-range'),
     dcc.Dropdown(
         id='metric-selector',
         options=[
             {'label': 'Summary', 'value': 'summary'},
-            {'label': 'PM2.5', 'value': 'pm.2.5'},
-            {'label': 'Temperature', 'value': 'tempF'},
-            {'label': 'Humidity', 'value': 'rh'},
-            {'label': 'AQI', 'value': 'aqi'},
-            {'label': 'Heat Index', 'value': 'heat_index'}
+            {'label': 'PM2.5 Concentration (µg/m³)', 'value': 'pm.2.5'},
+            {'label': 'Temperature (°F)', 'value': 'tempF'},
+            {'label': 'Humidity (%)', 'value': 'rh'},
+            {'label': 'Air Quality Index (AQI)', 'value': 'aqi'},
+            {'label': 'Heat Index (°F)', 'value': 'heat_index'}
         ],
         value='summary',
         style={'marginBottom': '20px'}
@@ -111,8 +112,11 @@ def render_dynamic_content(device, start_date, end_date, metric):
     df = load_data(data_dir, device)
     outdoor_df = load_data(data_dir, '88439')
 
-    start_date = pd.to_datetime(start_date).tz_localize('America/New_York')
-    end_date = pd.to_datetime(end_date).tz_localize('America/New_York')
+    try:
+        start_date = pd.to_datetime(start_date).tz_localize('America/New_York')
+        end_date = pd.to_datetime(end_date).tz_localize('America/New_York')
+    except Exception as e:
+        return html.Div(f"Date parsing failed: {e}")
 
     df = df[(df['time'] >= start_date) & (df['time'] <= end_date)]
     outdoor_df = outdoor_df[(outdoor_df['time'] >= start_date) & (outdoor_df['time'] <= end_date)]
@@ -126,14 +130,13 @@ def render_dynamic_content(device, start_date, end_date, metric):
     if metric == 'summary':
         avg_pm = df['pm.2.5'].mean()
         category_label = get_pm25_aqi_category(avg_pm)
-
+        
         df['date'] = df['time'].dt.date
         daily_avg_cols = ['pm.2.5', 'tempF', 'rh', 'heat_index']
         if 'aqi' in df.columns:
             daily_avg_cols.append('aqi')
 
         daily_avg = df.groupby('date')[daily_avg_cols].mean().reset_index()
-
         peak_hour = df.groupby(df['time'].dt.hour)['pm.2.5'].mean().idxmax()
 
         summary_text = [
@@ -170,18 +173,22 @@ def render_dynamic_content(device, start_date, end_date, metric):
 
     elif metric in df.columns:
         df['hour'] = df['time'].dt.hour
-        outdoor_df['hour'] = outdoor_df['time'].dt.hour
+        if metric in outdoor_df.columns:
+            outdoor_df['hour'] = outdoor_df['time'].dt.hour
+
         hourly_avg = df.groupby('hour')[metric].mean().reset_index()
-        outdoor_hourly = outdoor_df.groupby('hour')[metric].mean().reset_index()
-
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=df['time'], y=df[metric], mode='lines', name=f"Indoor Device {metric}"))
-        fig.add_trace(go.Scatter(x=outdoor_df['time'], y=outdoor_df[metric], mode='lines', name="Outdoor Sensor"))
-        fig.update_layout(title=f"{metric} Over Time", xaxis_title="Time", yaxis_title=metric, template='plotly_white')
-
         trace_fig = go.Figure()
         trace_fig.add_trace(go.Scatter(x=hourly_avg['hour'], y=hourly_avg[metric], mode='lines+markers', name='Indoor Hourly Avg'))
-        trace_fig.add_trace(go.Scatter(x=outdoor_hourly['hour'], y=outdoor_hourly[metric], mode='lines+markers', name='Outdoor Hourly Avg'))
+
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=df['time'], y=df[metric], mode='lines', name="Indoor Sensor"))
+
+        if metric in outdoor_df.columns:
+            outdoor_hourly = outdoor_df.groupby('hour')[metric].mean().reset_index()
+            trace_fig.add_trace(go.Scatter(x=outdoor_hourly['hour'], y=outdoor_hourly[metric], mode='lines+markers', name='Outdoor Hourly Avg'))
+            fig.add_trace(go.Scatter(x=outdoor_df['time'], y=outdoor_df[metric], mode='lines', name="Outdoor Sensor"))
+
+        fig.update_layout(title=f"{metric} Over Time", xaxis_title="Time", yaxis_title=metric, template='plotly_white')
         trace_fig.update_layout(title=f"Hourly Average {metric}", xaxis_title="Hour of Day", yaxis_title=f"Average {metric}", template='plotly_white')
 
         return html.Div([
