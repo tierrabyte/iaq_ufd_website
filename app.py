@@ -28,7 +28,7 @@ def load_data(directory, device):
         file_path = os.path.join(directory, f'{device}.csv')
         if os.path.exists(file_path):
             df = pd.read_csv(file_path)
-            df['time'] = pd.to_datetime(df['time'], errors='coerce')
+            df['time'] = pd.to_datetime(df['time'], errors='coerce', utc=True).dt.tz_convert('America/New_York')
             df = df[df['time'].notna()]
             return df
     except Exception as e:
@@ -111,9 +111,8 @@ def render_dynamic_content(device, start_date, end_date, metric):
     df = load_data(data_dir, device)
     outdoor_df = load_data(data_dir, '88439')
 
-    eastern = pytz.timezone("America/New_York")
-    start_date = eastern.localize(pd.to_datetime(start_date).to_pydatetime())
-    end_date = eastern.localize(pd.to_datetime(end_date).to_pydatetime())
+    start_date = pd.to_datetime(start_date).tz_localize('America/New_York')
+    end_date = pd.to_datetime(end_date).tz_localize('America/New_York')
 
     df = df[(df['time'] >= start_date) & (df['time'] <= end_date)]
     outdoor_df = outdoor_df[(outdoor_df['time'] >= start_date) & (outdoor_df['time'] <= end_date)]
